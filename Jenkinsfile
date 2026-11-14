@@ -38,7 +38,7 @@ pipeline {
         }
         stage('--deploy to Tomcat--') {
             steps {
-                sh "cp /var/lib/jenkins/.m2/repository/com/example/stud-reg-war/0.0.1-SNAPSHOT/stud-reg-war-0.0.1-SNAPSHOT.war /var/lib/tomcat10/webapps/student-app.war"
+                sh "cp /var/lib/jenkins/.m2/repository/com/example/stud-reg-war1/0.0.1-SNAPSHOT/stud-reg-war1-0.0.1-SNAPSHOT.war /var/lib/tomcat10/webapps/student-app.war1"
             }
         }
     }
