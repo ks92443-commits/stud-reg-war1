@@ -1,69 +1,58 @@
-
 pipeline {
     agent any
+    
+    environment {
+        DOCKER_HUB_USER = "shivakathavath" // Change this
+        IMAGE_NAME      = "student-reg-war1"
+        REGION          = "us-east-1"
+        CLUSTER_NAME    = "stud-reg-cluster"
+    }
 
     stages {
-
-        stage('--clean--') {
+        stage('Maven Build & Test') {
             steps {
-                sh 'mvn clean'
+                echo 'Building & Testing Application...'
+                sh 'mvn clean package'
             }
         }
 
-        stage('--compile--') {
+        stage('Docker Image Construction') {
             steps {
-                sh 'mvn compile'
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', passwordVariable: 'PASS', usernameVariable: 'USER')]) {
+                        echo 'Building and Pushing Docker Image...'
+                        sh "docker build -t ${DOCKER_HUB_USER}/${IMAGE_NAME}:${BUILD_NUMBER} ."
+                        sh "docker tag ${DOCKER_HUB_USER}/${IMAGE_NAME}:${BUILD_NUMBER} ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest"
+                        sh "echo $PASS | docker login -u $USER --password-stdin"
+                        sh "docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:${BUILD_NUMBER}"
+                        sh "docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest"
+                    }
+                }
             }
         }
 
-        stage('--test--') {
+        stage('K8s Deployment') {
             steps {
-                sh 'mvn test'
+                script {
+                    echo 'Updating Kubeconfig and Deploying to EKS...'
+                    sh "aws eks update-kubeconfig --region ${REGION} --name ${CLUSTER_NAME}"
+                    
+                    // Using envsubst if you want to inject the build number into the manifest
+                    // Otherwise, applying the latest tag works for static manifests
+                    sh "kubectl apply -f deployment.yml"
+                    sh "kubectl apply -f service.yml"
+                    
+                    // Force a rollout to ensure the new image is pulled
+                    sh "kubectl rollout restart deployment/student-reg-app"
+                }
             }
         }
+    }
 
-        stage('--package--') {
-            steps {
-                sh 'mvn package'
-            }
-        }
-
-        stage('--install--') {
-            steps {
-                sh 'mvn install'
-            }
-        }
-
-        stage('--verify settings.xml--') {
-            steps {
-                sh '''
-                    test -s /var/lib/jenkins/.m2/settings.xml
-                    echo "Nexus settings.xml found"
-                '''
-            }
-        }
-
-        stage('--deploy to Nexus--') {
-            steps {
-                sh 'mvn deploy'
-            }
-        }
-
-        stage('--verify WAR file--') {
-            steps {
-                sh '''
-                    ls -lh target/stud-reg-war-0.0.1-SNAPSHOT.war
-                '''
-            }
-        }
-
-        stage('--deploy to Tomcat--') {
-            steps {
-                sh '''
-                    cp target/stud-reg-war-0.0.1-SNAPSHOT.war \
-                    /var/lib/tomcat10/webapps/student-app.war
-                '''
-            }
+    post {
+        always {
+            echo 'Cleaning up workspace...'
+            cleanWs()
         }
     }
 }
